@@ -47,6 +47,7 @@ def test_success_produces_both_verticals(ctx):
     manifest = json.loads((ctx.out_dir / "last_run.json").read_text())
     assert manifest["status"] == "succeeded" and manifest["started_at"] and manifest["finished_at"]
     assert all(o["state"] == "fresh" for o in manifest["outputs"])
+    assert (ctx.out_dir / "dossiers" / "READ_ME_FIRST.txt").read_text().startswith("OK: all reports are up to date")
 
 
 # 2. A failed critical stage cannot be reported as success -------------------------------
@@ -146,3 +147,59 @@ def test_wrong_unit_is_rejected(ctx):
         conn.execute("UPDATE staging.feature SET units = '{\"voltage_kv\": \"V\"}' WHERE feature_id = 'S1'")
     promote = run_pipeline(ctx)["stages"][1]["counts"]
     assert "substation S1: voltage_kv must be given in kV" in promote["rejected_rows"]
+
+
+# Design-review findings (see README "Design review") --------------------------------------
+
+def test_early_failure_marks_every_output_stale(ctx, monkeypatch):
+    run_pipeline(ctx)
+    run_pipeline(ctx, with_stage("check_prerequisites", boom))
+    assert {o["state"] for o in output_states(ctx)} == {"STALE"}
+    assert (ctx.out_dir / "dossiers" / "READ_ME_FIRST.txt").read_text().startswith("DO NOT USE")
+    monkeypatch.setenv("PILOT_DATABASE_URL", ctx.db_url)
+    assert cli.main(["status"]) == 1
+
+
+def test_readers_are_warned_while_a_run_is_in_progress(ctx):
+    seen = {}
+
+    def look_at_verdict_file(c):
+        seen["text"] = (c.out_dir / "dossiers" / "READ_ME_FIRST.txt").read_text()
+        return {}
+
+    run_pipeline(ctx, with_stage("check_prerequisites", look_at_verdict_file))
+    assert seen["text"].startswith("DO NOT USE YET: an update started")   # written before any stage runs
+
+
+def test_dataset_with_no_valid_rows_fails_and_keeps_last_good_data(ctx):
+    run_pipeline(ctx)
+    with connect(ctx.db_url) as conn:
+        conn.execute("UPDATE staging.feature SET source_date = NULL WHERE dataset = 'protected_area'")
+    run = run_pipeline(ctx)
+    assert statuses(run)["promote_accepted_data"] == "failed"
+    assert run["stages"][1]["error"].startswith("no usable protected_area data")
+    with connect(ctx.db_url) as conn:
+        assert conn.execute("SELECT count(*) AS n FROM core.protected_area").fetchone()["n"] == 2
+
+
+def test_withdrawn_row_is_removed_and_bad_country_code_is_rejected(ctx):
+    run_pipeline(ctx)
+    with connect(ctx.db_url) as conn:
+        conn.execute("UPDATE staging.feature SET review_status = 'rejected' WHERE feature_id = 'P001'")
+        conn.execute("UPDATE staging.feature SET country_code = 'DEU' WHERE feature_id = 'P002'")
+        conn.execute("UPDATE staging.feature SET source_date = NULL WHERE feature_id = 'PA1'")  # bad re-delivery
+    run = run_pipeline(ctx)
+    assert run["status"] == "succeeded" and run["stages"][1]["counts"]["changed"] >= 2
+    assert "parcel P002: country_code must be 2 capital letters, e.g. DE" in run["stages"][1]["counts"]["rejected_rows"]
+    assert "P001" not in candidates(ctx, "mart.bess_candidates")
+    assert not (ctx.out_dir / "dossiers" / "bess" / "DE-P001.md").exists()
+    assert "P004" not in candidates(ctx, "mart.bess_candidates")      # PA1 kept its last good version
+
+
+def test_second_run_is_refused_while_one_is_active(ctx, monkeypatch):
+    monkeypatch.setenv("PILOT_DATABASE_URL", ctx.db_url)
+    monkeypatch.setenv("PILOT_OUT_DIR", str(ctx.out_dir))
+    with connect(ctx.db_url) as holder:
+        holder.execute("SELECT pg_advisory_lock(%s)", (cli.RUN_LOCK,))
+        assert cli.main(["run"]) == 1
+    assert not (ctx.out_dir / "last_run.json").exists()
