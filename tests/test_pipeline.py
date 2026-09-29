@@ -158,6 +158,17 @@ def test_bad_delivery_is_left_out_and_run_still_succeeds(ctx, change, reason):
     assert any(r.startswith(reason) for r in run["stages"][1]["counts"]["rejected_rows"])
 
 
+def test_long_left_out_list_is_shortened_on_screen_but_complete_in_manifest(ctx, monkeypatch, capsys):
+    with connect(ctx.db_url) as conn:
+        conn.execute("INSERT INTO staging.feature (dataset, country_code, feature_id, review_status)"
+                     " SELECT 'parcel', 'DE', 'BAD' || i, 'accepted' FROM generate_series(1, 30) i")
+    monkeypatch.setenv("PILOT_DATABASE_URL", ctx.db_url)
+    monkeypatch.setenv("PILOT_OUT_DIR", str(ctx.out_dir))
+    cli.main(["run"])
+    assert "... and 13 more, all listed in the manifest" in capsys.readouterr().out   # 30 + 3 fixture rows
+    assert len(json.loads((ctx.out_dir / "last_run.json").read_text())["stages"][1]["counts"]["rejected_rows"]) == 33
+
+
 def test_wrong_unit_is_rejected(ctx):
     with connect(ctx.db_url) as conn:
         conn.execute("UPDATE staging.feature SET units = '{\"voltage_kv\": \"V\"}' WHERE feature_id = 'S1'")

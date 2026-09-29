@@ -13,6 +13,7 @@ from pilot.manifest import output_states, verdict
 from pilot.runner import run_pipeline
 
 RUN_LOCK = 7431   # any fixed number; PostgreSQL lets only one session hold it
+SHOW_LEFT_OUT = 20
 
 
 def print_outputs(outputs: list[dict]) -> None:
@@ -42,7 +43,9 @@ def cmd_run(ctx: Context) -> int:
         print(f"{s['name']:<23} {s['status']:<10} {details}")
     left_out = run["stages"][1].get("counts", {}).get("rejected_rows", [])   # from promote
     if left_out:
-        print("\nLEFT OUT (not used; fix in staging):\n  " + "\n  ".join(left_out))
+        print("\nLEFT OUT (not used; fix in staging):\n  " + "\n  ".join(left_out[:SHOW_LEFT_OUT]))
+        if len(left_out) > SHOW_LEFT_OUT:   # the manifest keeps the full list
+            print(f"  ... and {len(left_out) - SHOW_LEFT_OUT} more, all listed in the manifest")
     print_outputs(run["outputs"])
     print(f"\n{run['verdict']}")
     print(f"\nRUN {run['status'].upper()}  manifest: {run['manifest']}")
