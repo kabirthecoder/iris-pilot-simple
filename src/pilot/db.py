@@ -27,7 +27,8 @@ class Context:
 
 def connect(db_url: str) -> psycopg.Connection:
     """One connection = one transaction: committed if the block succeeds, rolled back if it raises."""
-    return psycopg.connect(db_url, row_factory=dict_row, connect_timeout=5)
+    # lock_timeout: a blocked step fails (and shows as STALE) instead of hanging forever.
+    return psycopg.connect(db_url, row_factory=dict_row, connect_timeout=5, options="-c lock_timeout=60s")
 
 
 def setup(db_url: str) -> None:
