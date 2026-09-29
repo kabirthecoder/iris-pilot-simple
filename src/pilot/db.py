@@ -28,7 +28,10 @@ class Context:
 def connect(db_url: str) -> psycopg.Connection:
     """One connection = one transaction: committed if the block succeeds, rolled back if it raises."""
     # lock_timeout: a blocked step fails (and shows as STALE) instead of hanging forever.
-    return psycopg.connect(db_url, row_factory=dict_row, connect_timeout=5, options="-c lock_timeout=60s")
+    # jit=off: the views are many small index lookups; compiling them costs ~0.25 s per view
+    # and saves nothing (measured, see README "Time and space complexity").
+    return psycopg.connect(db_url, row_factory=dict_row, connect_timeout=5,
+                           options="-c lock_timeout=60s -c jit=off")
 
 
 def setup(db_url: str) -> None:

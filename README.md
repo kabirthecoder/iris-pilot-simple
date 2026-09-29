@@ -199,6 +199,10 @@ R = rejected rows. "Local" means the few features near one parcel, found through
 | export_dossiers | O(P) | O(1) | top 3 per vertical (top-N sort), at most 6 files |
 | manifest + status | O(stages + R) | O(R) | the manifest keeps every rejected row; the screen shows the first 20 |
 
+PostgreSQL's JIT compiler is switched off for the pipeline's connections: it spent about 0.25 s
+compiling each view (seen in `EXPLAIN ANALYZE`) and saved nothing, because the work is many small
+index lookups. Refreshing both views at 40,000 parcels went from about 3.3 s to 2.6 s.
+
 Every spatial join uses its GiST index (checked with `EXPLAIN`), so no parcel is compared with
 every substation, reserve or peat polygon. `REFRESH MATERIALIZED VIEW` briefly needs space for the
 old and the new copy of a view.
