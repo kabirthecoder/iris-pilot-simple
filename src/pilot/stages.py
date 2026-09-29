@@ -16,7 +16,7 @@ DATASETS = {
     },
     "substation": {
         "table": "core.substation", "key": "substation_id", "types": ("POINT",),
-        "columns": {"voltage_kv": "number"}, "units": {"voltage_kv": "kV"},
+        "columns": {"voltage_kv": "number"}, "units": {"voltage_kv": "kV"}, "positive": ("voltage_kv",),
     },
     "protected_area": {
         "table": "core.protected_area", "key": "area_id", "types": ("POLYGON", "MULTIPOLYGON"),
@@ -25,6 +25,7 @@ DATASETS = {
     "peat_soil": {
         "table": "core.peat_soil", "key": "peat_id", "types": ("POLYGON", "MULTIPOLYGON"),
         "columns": {"depth_cm": "number", "drained": "boolean"}, "units": {"depth_cm": "cm"},
+        "positive": ("depth_cm",),
     },
 }
 
@@ -66,17 +67,23 @@ def _problem(spec: dict) -> str:
     checks = [
         "WHEN country_code IS NULL THEN 'missing country_code'",
         "WHEN country_code !~ '^[A-Z]{2}$' THEN 'country_code must be 2 capital letters, e.g. DE'",
+        "WHEN feature_id !~ '^[A-Za-z0-9_.-]+$' THEN 'feature_id may only use letters, digits, _ . -'",
         "WHEN geom IS NULL OR ST_IsEmpty(geom) THEN 'missing geometry'",
+        "WHEN ST_NDims(geom) <> 2 THEN 'geometry must be 2D (x, y)'",
         "WHEN ST_SRID(geom) NOT IN (SELECT srid FROM spatial_ref_sys) THEN 'unknown CRS'",
         f"WHEN GeometryType(geom) NOT IN ({types}) THEN 'wrong geometry type'",
         "WHEN NOT ST_IsValid(geom) THEN 'invalid geometry: ' || ST_IsValidReason(geom)",
         "WHEN source_date IS NULL OR source_date > current_date THEN 'missing or future source_date'",
-        "WHEN uncertainty_m IS NULL OR uncertainty_m < 0 THEN 'missing uncertainty'",
+        # NOT (x >= 0 AND x < 'Infinity') also rejects NaN and Infinity
+        "WHEN uncertainty_m IS NULL OR NOT (uncertainty_m >= 0 AND uncertainty_m < 'Infinity')"
+        " THEN 'missing or invalid uncertainty_m'",
     ]
     checks += [f"WHEN jsonb_typeof(attrs -> '{c}') IS DISTINCT FROM '{t}' THEN 'missing or invalid {c}'"
                for c, t in spec["columns"].items()]
     checks += [f"WHEN units ->> '{c}' IS DISTINCT FROM '{u}' THEN '{c} must be given in {u}'"
                for c, u in spec["units"].items()]
+    checks += [f"WHEN NOT (attrs ->> '{c}')::numeric > 0 THEN '{c} must be greater than 0'"
+               for c in spec.get("positive", ())]
     return "CASE " + " ".join(checks) + " END"
 
 

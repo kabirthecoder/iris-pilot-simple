@@ -142,6 +142,21 @@ def test_rows_not_accepted_are_never_promoted(ctx):
         assert conn.execute("SELECT count(*) AS n FROM core.parcel WHERE country_code IS NULL").fetchone()["n"] == 0
 
 
+@pytest.mark.parametrize("change, reason", [
+    ("SET geom = ST_Force3D(geom) WHERE feature_id = 'P002'", "parcel P002: geometry must be 2D"),
+    ("SET uncertainty_m = 'NaN' WHERE feature_id = 'P002'", "parcel P002: missing or invalid uncertainty_m"),
+    ("SET attrs = '{\"voltage_kv\": -110}' WHERE feature_id = 'S1'", "substation S1: voltage_kv must be greater than 0"),
+    ("SET feature_id = '../evil' WHERE feature_id = 'P001'", "parcel ../evil: feature_id may only use"),
+])
+def test_bad_delivery_is_left_out_and_run_still_succeeds(ctx, change, reason):
+    """Found in trials: each of these used to crash the run, be accepted, or break the export."""
+    with connect(ctx.db_url) as conn:
+        conn.execute(f"UPDATE staging.feature {change}")
+    run = run_pipeline(ctx)
+    assert run["status"] == "succeeded"
+    assert any(r.startswith(reason) for r in run["stages"][1]["counts"]["rejected_rows"])
+
+
 def test_wrong_unit_is_rejected(ctx):
     with connect(ctx.db_url) as conn:
         conn.execute("UPDATE staging.feature SET units = '{\"voltage_kv\": \"V\"}' WHERE feature_id = 'S1'")
