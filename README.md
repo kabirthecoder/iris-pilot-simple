@@ -12,7 +12,7 @@ Needs Docker and Python 3.12+ (if `python3` is older: `make install PYTHON=pytho
 make up        # start PostgreSQL 16 + PostGIS 3.4
 make install   # create .venv
 make run       # the one command
-make test      # 15 tests
+make test      # 19 tests
 make status    # is each output fresh or STALE?
 ```
 
@@ -123,6 +123,9 @@ This shows in every manifest, in `pilot status` (exit 1 unless OK) and, in plain
   screening without it would wrongly report "0 % overlap". A bad re-delivery of one row keeps
   that row's last good version, so a broken reserve polygon can never make a reserve disappear.
 - **Country codes:** must be 2 capital letters (`DE`); anything else is left out with a reason.
+- **Also left out with a reason:** 3D geometries, NaN/infinite uncertainty, voltage or peat depth ≤ 0,
+  and feature ids with characters other than letters, digits, `_ . -` (they become file names).
+- **Dossiers** end with the project's reference uncertainty wording ("Preliminary prospecting material…").
 - **Setup:** SQL files and a CLI, not notebooks. There are no credentials; the fixture is local.
 
 ## Screening rules
@@ -157,6 +160,30 @@ Each view has one yes/no column per rule, so every dossier shows why a parcel pa
 | `make run` also loads the fixture | Separate `make seed` for production data |
 | Every run keeps its manifest | Retention for `out/runs/` |
 | No "borderline" flag (P008 passes at 2,997 m of 3,000 m, ±2.5 m) | Flag results within the positional uncertainty |
+
+## Trials
+
+Beyond the unit tests, 43 scenarios were run as real `pilot` processes against PostgreSQL 16 +
+PostGIS 3.4, each on a fresh database:
+
+| Area | Scenarios | Result |
+|---|---|---|
+| Happy path and reruns | clean run; 5 reruns (identical files, `changed=0`, same data version); `status` before and after | all pass |
+| Data contract | 21 kinds of bad row: missing/empty/3D/wrong-type/invalid geometry, unknown or no CRS, future or missing date, missing/negative/NaN uncertainty, wrong attribute type, wrong unit, negative voltage, bad country code, unsafe id | 4 defects found and fixed (below); all pass |
+| Whole dataset bad | no accepted substations; all peat rows invalid (last good data kept, everything STALE); staging empty | all pass |
+| Data changes | new attribute; withdrawn then re-accepted; pending then accepted; geometry moved 1 m | all pass |
+| Country scope | same parcel id in DE and NL: separate rows, NL never joins DE substations | pass |
+| Operations | database down; not set up; wrong password (not printed); 4 runs started at once; `kill -9` mid-refresh; refresh blocked past `lock_timeout` (fails after 60 s, STALE); `out/` deleted; stray old dossier; `status` during a run | all pass |
+| Scale | 20,000 parcels, 200 substations, 400 peat polygons, 100 reserves | 2.8 s per run, rerun changes 0 rows |
+
+Defects the trials found (each now has a test in `test_bad_delivery_is_left_out_and_run_still_succeeds`):
+
+| Bad row | Before | Now |
+|---|---|---|
+| 3D polygon | whole promotion crashed | left out: "geometry must be 2D" |
+| uncertainty `NaN` | accepted | left out |
+| voltage −110 kV | accepted | left out: "must be greater than 0" |
+| feature id `../evil` | dossier export crashed | left out: "feature_id may only use …" |
 
 ## Design review
 
