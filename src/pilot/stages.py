@@ -65,6 +65,7 @@ def _problem(spec: dict) -> str:
     types = ", ".join(f"'{t}'" for t in spec["types"])
     checks = [
         "WHEN country_code IS NULL THEN 'missing country_code'",
+        "WHEN country_code !~ '^[A-Z]{2}$' THEN 'country_code must be 2 capital letters, e.g. DE'",
         "WHEN geom IS NULL OR ST_IsEmpty(geom) THEN 'missing geometry'",
         "WHEN ST_SRID(geom) NOT IN (SELECT srid FROM spatial_ref_sys) THEN 'unknown CRS'",
         f"WHEN GeometryType(geom) NOT IN ({types}) THEN 'wrong geometry type'",
@@ -85,15 +86,17 @@ def _value(column: str, json_type: str) -> str:
 
 
 def promote(ctx: Context) -> dict:
-    """Copy accepted rows that meet the data contract into core (insert or update).
+    """Make core exactly match the staged rows that are accepted AND meet the data contract:
+    insert or update those rows, delete rows that were withdrawn or became invalid.
 
     Rerun-safe: rows that are already identical are not touched, and data_version only goes up
-    when something really changed."""
+    when something really changed. Everything happens in one transaction."""
     changed = valid = 0
     rejected: list[str] = []
     with connect(ctx.db_url) as conn:
         for dataset, spec in DATASETS.items():
             problem = _problem(spec)
+            usable = 0
             for row in conn.execute(
                 f"SELECT feature_id, {problem} AS problem FROM staging.feature"
                 " WHERE dataset = %s AND review_status = 'accepted'", (dataset,)
@@ -101,7 +104,12 @@ def promote(ctx: Context) -> dict:
                 if row["problem"]:
                     rejected.append(f"{dataset} {row['feature_id']}: {row['problem']}")
                 else:
-                    valid += 1
+                    usable += 1
+            if usable == 0:  # never screen with an empty input (it would read as "0 % overlap")
+                first = next((r for r in rejected if r.startswith(dataset)), "none accepted")
+                raise StageError(f"no usable {dataset} data: all accepted rows break the data contract "
+                                 f"(first: {first})")
+            valid += usable
 
             cols = list(spec["columns"])
             geom = "ST_Transform(geom, 3035)" if spec["types"] == ("POINT",) else "ST_Multi(ST_Transform(geom, 3035))"
@@ -117,9 +125,19 @@ def promote(ctx: Context) -> dict:
                 WHERE ({', '.join(f't.{c}' for c in all_cols)})
                       IS DISTINCT FROM ({', '.join(f'EXCLUDED.{c}' for c in all_cols)})
             """, (dataset,)).rowcount
+            # Withdrawn by the data steward: remove from core. (A row that is accepted but now
+            # invalid keeps its last good version and is listed under LEFT OUT - a bad delivery
+            # must never delete good data, e.g. a nature reserve.)
+            changed += conn.execute(f"""
+                DELETE FROM {spec['table']} t WHERE NOT EXISTS (
+                    SELECT 1 FROM staging.feature
+                    WHERE dataset = %s AND review_status = 'accepted'
+                      AND country_code = t.country_code AND feature_id = t.{spec['key']})
+            """, (dataset,)).rowcount
 
         if changed:
             conn.execute("UPDATE ops.state SET value = value + 1 WHERE key = 'data_version'")
+            conn.execute("ANALYZE core.parcel, core.substation, core.protected_area, core.peat_soil")
         not_accepted = conn.execute(
             "SELECT count(*) AS n FROM staging.feature WHERE review_status <> 'accepted'").fetchone()["n"]
     return {"valid": valid, "changed": changed, "rejected": len(rejected),
@@ -174,7 +192,7 @@ Land use: {r['land_use']} | Area: {r['area_m2']:,} m²
 | Within 3,000 m of a substation of 110 kV or more | {r['substation_distance_m']} m ({r['substation_id']}, {r['voltage_kv']} kV) | {_yes(r['ok_grid'])} |
 | At most 5 % inside protected areas | {float(r['protected_share']) * 100:.1f} % | {_yes(r['ok_protected'])} |
 
-Source date: {r['source_date']} | Positional uncertainty: ±{r['uncertainty_m']} m | CRS: EPSG:3035 | Data version: {version}
+Source date: {r['source_date']} | Positional uncertainty: ±{r['uncertainty_m']} m | CRS: EPSG:3035 | Data version: {version} | Check READ_ME_FIRST.txt in the dossiers folder before use
 """
 
 
@@ -189,7 +207,7 @@ Land use: {r['land_use']} | Area: {r['area_m2']:,} m²
 | At least 30 % on drained peat | {float(r['drained_share']) * 100:.0f} % | {_yes(r['ok_drained'])} |
 | Peat at least 30 cm deep (area-weighted) | {r['mean_depth_cm']} cm | {_yes(r['ok_depth'])} |
 
-Source date: {r['source_date']} | Positional uncertainty: ±{r['uncertainty_m']} m | CRS: EPSG:3035 | Data version: {version}
+Source date: {r['source_date']} | Positional uncertainty: ±{r['uncertainty_m']} m | CRS: EPSG:3035 | Data version: {version} | Check READ_ME_FIRST.txt in the dossiers folder before use
 """
 
 
@@ -200,7 +218,7 @@ VERTICALS = [
 ]
 
 
-def _write(path: Path, text: str) -> None:
+def write_atomic(path: Path, text: str) -> None:
     """Write via a temp file + rename, so a crash never leaves a half-written file."""
     tmp = path.with_suffix(".tmp")
     tmp.write_text(text, encoding="utf-8")
@@ -218,7 +236,7 @@ def export_dossiers(ctx: Context) -> dict:
             target.mkdir(parents=True, exist_ok=True)
             names = {f"{r['country_code']}-{r['parcel_id']}.md" for r in rows}
             for r in rows:
-                _write(target / f"{r['country_code']}-{r['parcel_id']}.md", render(r, version))
+                write_atomic(target / f"{r['country_code']}-{r['parcel_id']}.md", render(r, version))
             for old in target.glob("*.md"):          # rerun-safe: remove dossiers no longer selected
                 if old.name not in names:
                     old.unlink()
