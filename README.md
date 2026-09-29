@@ -7,6 +7,10 @@ visible.
 ## Run it
 
 Needs Docker and Python 3.12+ (if `python3` is older: `make install PYTHON=python3.12`).
+On Apple Silicon the PostGIS image runs emulated: it works, just slower (the tests take about 50 s).
+
+To look inside the database: `docker compose exec db psql -U pilot -d pilot`, run from the project
+folder (or connect any SQL client to `localhost:54320`, user/password/database `pilot`).
 
 ```bash
 make up        # start PostgreSQL 16 + PostGIS 3.4

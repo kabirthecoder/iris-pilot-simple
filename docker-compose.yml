@@ -1,6 +1,7 @@
 services:
   db:
     image: postgis/postgis:16-3.4
+    platform: linux/amd64             # the official image is Intel-only; Apple Silicon runs it emulated
     environment:
       POSTGRES_USER: pilot
       POSTGRES_PASSWORD: pilot        # local only, not a secret
