@@ -183,6 +183,16 @@ def refresh_peat(ctx: Context) -> dict:
 SAMPLE_SIZE = 3
 
 
+# The project's reference uncertainty wording (IRIS-CAND-22), printed on every dossier.
+DISCLAIMER = (
+    "Preliminary prospecting material. Figures, eco-point estimates and site suitability are indicative and "
+    "based on available source data and commercial screening assumptions. The 8 eco-points/m2 factor is the "
+    "current commercial baseline, not certified compensation. Ownership, planning, grid capacity, environmental "
+    "eligibility and transferability remain subject to project-specific verification. No permit, reservation or "
+    "construction readiness is represented."
+)
+
+
 def _yes(ok: bool) -> str:
     return "yes" if ok else "NO"
 
@@ -200,6 +210,8 @@ Land use: {r['land_use']} | Area: {r['area_m2']:,} m²
 | At most 5 % inside protected areas | {float(r['protected_share']) * 100:.1f} % | {_yes(r['ok_protected'])} |
 
 Source date: {r['source_date']} | Positional uncertainty: ±{r['uncertainty_m']} m | CRS: EPSG:3035 | Data version: {version} | Check READ_ME_FIRST.txt in the dossiers folder before use
+
+> {DISCLAIMER}
 """
 
 
@@ -215,6 +227,8 @@ Land use: {r['land_use']} | Area: {r['area_m2']:,} m²
 | Peat at least 30 cm deep (area-weighted) | {r['mean_depth_cm']} cm | {_yes(r['ok_depth'])} |
 
 Source date: {r['source_date']} | Positional uncertainty: ±{r['uncertainty_m']} m | CRS: EPSG:3035 | Data version: {version} | Check READ_ME_FIRST.txt in the dossiers folder before use
+
+> {DISCLAIMER}
 """
 
 

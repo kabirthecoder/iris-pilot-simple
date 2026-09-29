@@ -48,6 +48,7 @@ def test_success_produces_both_verticals(ctx):
     assert manifest["status"] == "succeeded" and manifest["started_at"] and manifest["finished_at"]
     assert all(o["state"] == "fresh" for o in manifest["outputs"])
     assert (ctx.out_dir / "dossiers" / "READ_ME_FIRST.txt").read_text().startswith("OK: all reports are up to date")
+    assert "Preliminary prospecting material." in (ctx.out_dir / "dossiers" / "peat" / "DE-P009.md").read_text()
 
 
 # 2. A failed critical stage cannot be reported as success -------------------------------
