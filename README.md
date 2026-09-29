@@ -12,7 +12,7 @@ Needs Docker and Python 3.12+ (if `python3` is older: `make install PYTHON=pytho
 make up        # start PostgreSQL 16 + PostGIS 3.4
 make install   # create .venv
 make run       # the one command
-make test      # 19 tests
+make test      # 20 tests
 make status    # is each output fresh or STALE?
 ```
 
@@ -184,6 +184,38 @@ Defects the trials found (each now has a test in `test_bad_delivery_is_left_out_
 | uncertainty `NaN` | accepted | left out |
 | voltage −110 kV | accepted | left out: "must be greater than 0" |
 | feature id `../evil` | dossier export crashed | left out: "feature_id may only use …" |
+
+## Time and space complexity
+
+N = staged rows, P = parcels, S = substations, A = protected areas, K = peat polygons,
+R = rejected rows. "Local" means the few features near one parcel, found through a GiST index.
+
+| Stage | Time | Space | Why |
+|---|---|---|---|
+| check_prerequisites | O(N) | O(1) | one `GROUP BY` count over staging |
+| promote_accepted_data | O(N log N) | O(N) in core, O(R) in Python | each row checked once, upsert and delete use the primary-key and unique indexes; identical rows are not rewritten |
+| refresh_bess_view | O(P · (log S + log A + local)) | O(P) | one pass over parcels; nearest substation via GiST KNN, protected areas via GiST lookup |
+| refresh_peat_view | O(P · (log K + local)) | O(P) | same pattern with peat polygons |
+| export_dossiers | O(P) | O(1) | top 3 per vertical (top-N sort), at most 6 files |
+| manifest + status | O(stages + R) | O(R) | the manifest keeps every rejected row; the screen shows the first 20 |
+
+Every spatial join uses its GiST index (checked with `EXPLAIN`), so no parcel is compared with
+every substation, reserve or peat polygon. `REFRESH MATERIALIZED VIEW` briefly needs space for the
+old and the new copy of a view.
+
+Measured (whole `pilot run`, constant density, growing region):
+
+| Parcels | Run | Rerun (0 rows changed) | Python memory | core + views on disk |
+|---|---|---|---|---|
+| 5,000 | 0.8 s | 0.8 s | 40 MB | 3 MB |
+| 20,000 | 2.8 s | 2.4 s | 40 MB | 11 MB |
+| 80,000 | 8.6 s | 7.7 s | 43 MB | 44 MB |
+| 160,000 | 15.9 s | 15.6 s | 47 MB | 86 MB |
+
+2× the data takes about 2× the time, i.e. linear, and Python memory stays flat because the work
+happens in PostgreSQL. A rerun costs about as much as a first run because both views are always
+fully recomputed. For production, an incremental refresh of only the changed parcels would make
+reruns cheap.
 
 ## Design review
 
