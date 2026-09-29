@@ -1,6 +1,7 @@
 """Run manifest (what happened) and output states (is each output fresh or STALE?)."""
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
 from pilot.db import Context, connect
@@ -16,7 +17,9 @@ def output_states(ctx: Context) -> list[dict]:
             current = conn.execute("SELECT value FROM ops.state WHERE key = 'data_version'").fetchone()["value"]
             rows = conn.execute("SELECT * FROM ops.artifact ORDER BY name").fetchall()
     except Exception as exc:
-        return [{"name": "all outputs", "state": "UNKNOWN", "reason": f"database not reachable: {exc}"}]
+        first_line = str(exc).splitlines()[0]
+        return [{"name": "reports", "state": "UNKNOWN",
+                 "reason": f'database not reachable or not set up (new install: run "pilot setup"): {first_line}'}]
 
     states = []
     for a in rows:
@@ -32,6 +35,17 @@ def output_states(ctx: Context) -> list[dict]:
                        "built_at": a["built_at"].isoformat(timespec="seconds") if a["built_at"] else None,
                        "data_version": a["data_version"]})
     return states
+
+
+def verdict(outputs: list[dict]) -> str:
+    """One plain sentence for non-technical readers: can the dossiers be used?"""
+    bad = [o for o in outputs if o["state"] != "fresh"]
+    if outputs and not bad:
+        oldest = min(datetime.fromisoformat(o["built_at"]) for o in outputs).astimezone(UTC)
+        return f"OK: all reports are up to date (last update {oldest:%Y-%m-%d %H:%M} UTC). Safe to use."
+    name, reason = (bad[0]["name"], bad[0]["reason"].splitlines()[0]) if bad else ("reports", "no outputs recorded")
+    return (f"DO NOT USE: {name} cannot be trusted ({reason}). These dossiers may be outdated. "
+            "Ask the pilot operator to fix it and rerun.")
 
 
 def write_manifest(out_dir: Path, run: dict) -> Path:
