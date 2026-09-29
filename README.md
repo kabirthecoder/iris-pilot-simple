@@ -6,13 +6,13 @@ visible.
 
 ## Run it
 
-Needs Docker and Python 3.12+.
+Needs Docker and Python 3.12+ (if `python3` is older: `make install PYTHON=python3.12`).
 
 ```bash
 make up        # start PostgreSQL 16 + PostGIS 3.4
 make install   # create .venv
 make run       # the one command
-make test      # 10 tests
+make test      # 15 tests
 make status    # is each output fresh or STALE?
 ```
 
@@ -26,17 +26,25 @@ refresh_bess_view       succeeded  parcels=13, candidates=3
 refresh_peat_view       succeeded  parcels=13, candidates=2
 export_dossiers         succeeded  bess=3, peat=2
 
+LEFT OUT (not used; fix in staging):
+  parcel P900: invalid geometry: Self-intersection[470150 5483150]
+  parcel P901: missing country_code
+  substation S5: missing or invalid voltage_kv
+
 OUTPUT          STATE   WHY
 bess_dossiers   fresh   -
 bess_view       fresh   -
 peat_dossiers   fresh   -
 peat_view       fresh   -
 
-RUN SUCCEEDED  manifest: out/runs/20260929T152303940141Z.json
+OK: all reports are up to date (last update 2026-09-29 15:55 UTC). Safe to use.
+
+RUN SUCCEEDED  manifest: out/runs/20260929T155517609019Z.json
 ```
 
 Files produced:
 
+- `out/dossiers/READ_ME_FIRST.txt`: **one plain sentence for non-technical readers**. It is either "OK: all reports are up to date … Safe to use." or "DO NOT USE: … Ask the pilot operator to fix it and rerun." While a run is in progress it says "DO NOT USE YET".
 - `out/dossiers/bess/*.md` and `out/dossiers/peat/*.md`: sample dossiers
 - `out/runs/<run_id>.json`: run manifest (one per run)
 - `out/last_run.json`: the latest manifest
@@ -46,13 +54,14 @@ Files produced:
 | # | Stage | What it does |
 |---|---|---|
 | 1 | `check_prerequisites` | Database reachable, PostgreSQL 16+, PostGIS 3.4+, tables exist, accepted data exists for all 4 datasets |
-| 2 | `promote_accepted_data` | Copies rows the data steward **accepted** and that meet the data contract from `staging` into `core` |
+| 2 | `promote_accepted_data` | Makes `core` match what the data steward **accepted**: valid rows are inserted or updated, withdrawn rows are deleted. Invalid rows are left out and listed. If a dataset has **no** valid rows, the stage fails instead of screening with an empty input |
 | 3 | `refresh_bess_view` | Refreshes `mart.bess_candidates` |
 | 4 | `refresh_peat_view` | Refreshes `mart.peat_candidates` |
 | 5 | `export_dossiers` | Writes the top 3 candidates of each vertical as Markdown dossiers |
 
 If a stage fails, it is marked `failed` with its error, every later stage is marked `skipped`,
-and the run is `failed` (exit code 1).
+and the run is `failed` (exit code 1). Only one run can be active at a time, because a PostgreSQL
+advisory lock makes a second `pilot run` stop with "Another pilot run is already in progress".
 
 ## The deliverables
 
@@ -84,7 +93,9 @@ attempt failed. An output is **STALE** if:
 - its last attempt failed, or
 - it was built from an older data version.
 
-This shows in every manifest and in `pilot status`, which exits 1 if anything is stale.
+If the first two stages fail, all outputs become STALE, because nothing downstream can be trusted.
+This shows in every manifest, in `pilot status` (exit 1 unless OK) and, in plain words, in
+`out/dossiers/READ_ME_FIRST.txt`.
 *Test:* `test_stale_outputs_are_visible`
 
 **4. Rerun is safe.**
@@ -92,9 +103,10 @@ This shows in every manifest and in `pilot status`, which exits 1 if anything is
   version stays the same.
 - Views are recomputed from core, which gives the same result every time.
 - Dossiers are overwritten atomically (temp file + rename), and old ones are removed.
+- A second run started at the same time is refused, by an advisory lock.
 - `pilot setup` uses `IF NOT EXISTS` and `ON CONFLICT DO NOTHING`.
 
-*Test:* `test_rerun_changes_nothing`
+*Tests:* `test_rerun_changes_nothing`, `test_second_run_is_refused_while_one_is_active`
 
 ## Engineering constraints
 
@@ -106,9 +118,11 @@ This shows in every manifest and in `pilot status`, which exits 1 if anything is
 - **Data contracts:** each staged row carries its CRS (the geometry's SRID), units, source date
   and positional uncertainty. Promotion rejects a row, with the reason, when any of these is
   missing or wrong, e.g. `substation S5: missing or invalid voltage_kv`.
-- **Never invent data:** missing values are rejected, not filled in. If a whole dataset is
-  missing (e.g. no protected areas), the run stops, because screening without it would wrongly
-  report "0 % overlap".
+- **Never invent data:** missing values are rejected, not filled in. If a dataset has no accepted
+  rows, or none of them is valid (e.g. no usable protected areas), the run stops, because
+  screening without it would wrongly report "0 % overlap". A bad re-delivery of one row keeps
+  that row's last good version, so a broken reserve polygon can never make a reserve disappear.
+- **Country codes:** must be 2 capital letters (`DE`); anything else is left out with a reason.
 - **Setup:** SQL files and a CLI, not notebooks. There are no credentials; the fixture is local.
 
 ## Screening rules
@@ -137,6 +151,29 @@ Each view has one yes/no column per rule, so every dossier shows why a parcel pa
 | `pilot setup` runs the SQL files with `IF NOT EXISTS` | Versioned migrations (e.g. Alembic or numbered, checksummed files) |
 | Fixture loaded from `seed.sql` | Source adapters (WFS, cadastre API, files) filling `staging` |
 | Thresholds written in the view SQL | A rules table per country |
-| No lock against two runs at the same time | `pg_try_advisory_lock` so only one run can be active |
-| Upsert only (no deletes) | Handle features removed at the source |
-| Status via exit code, manifest and `pilot status` | Scheduler (cron, Airflow) plus alerts on exit code 1 |
+| Status via exit code, manifest, `pilot status` and `READ_ME_FIRST.txt` | Scheduler plus alerts, e.g. cron: `0 6 * * * cd /repo && make run \|\| mail -s "IRIS run FAILED" pm@example.com` |
+| Dossiers show the parcel's source date and uncertainty | Also show those of the peat, substation and reserve data each verdict depends on |
+| Plain `REFRESH MATERIALIZED VIEW` (readers wait briefly; `lock_timeout` = 60 s stops endless waits) | `REFRESH … CONCURRENTLY` once people read the views live |
+| `make run` also loads the fixture | Separate `make seed` for production data |
+| Every run keeps its manifest | Retention for `out/runs/` |
+| No "borderline" flag (P008 passes at 2,997 m of 3,000 m, ±2.5 m) | Flag results within the positional uncertainty |
+
+## Design review
+
+Before submission the code was reviewed adversarially by four reviewers: a prosecutor looking
+for defects, a defence guarding simplicity, a user advocate for non-technical users, and an
+on-call engineer. They cross-examined each other and an independent judge ruled. They found and
+reproduced the following problems. Each is now fixed and has a test.
+
+| Problem found | Fix |
+|---|---|
+| After a failed run, `pilot status` still said "fresh" | Failures in the first two stages mark every output STALE; `status` exits 1 unless OK |
+| All protected areas invalid → screened as "0 % overlap" and exported | Stop when a dataset has no valid rows |
+| A parcel withdrawn by the data steward was still exported | Withdrawn rows are deleted from `core` |
+| One bad country code (`DEU`) crashed the whole promotion | Rejected with a reason like any other bad row |
+| Two runs at once could mark an old view "fresh" | Advisory lock: one run at a time |
+| A blocked refresh could hang forever | `lock_timeout` = 60 s: it fails and shows as STALE |
+| Non-technical readers had no plain answer | `READ_ME_FIRST.txt` next to the dossiers; left-out rows printed |
+
+Rejected to keep it simple: dashboards, alerting services, parallel stages, retries and new
+dependencies.
