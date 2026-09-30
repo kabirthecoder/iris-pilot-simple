@@ -1,8 +1,24 @@
 # IRIS Pilot: One-Command Orchestration
 
+[![tests](https://github.com/kabirthecoder/iris-pilot-simple/actions/workflows/tests.yml/badge.svg)](https://github.com/kabirthecoder/iris-pilot-simple/actions/workflows/tests.yml)
+
 One command that **promotes accepted data**, **refreshes the BESS and peatland views**,
 **exports sample dossiers** and **writes a run status**. Failed and stale stages are always
 visible.
+
+**For reviewers, a 2-minute tour:**
+1. `make up && make install && make run`: the one command (output shown below).
+2. [`examples/`](examples/): a two-page dossier per vertical (Markdown and PDF), plus the manifest
+   of a successful and of a failed run, so you can see the outputs without running anything.
+3. `src/pilot/runner.py`: the stage runner and its one rule: the run succeeded only if every
+   stage succeeded.
+4. "How each acceptance criterion is met" and "Project context" below map every point of the
+   brief to code and to a test.
+
+**Scope and time:** the core (CLI, stage runner, manifest, both views, dossiers, tests for all
+four acceptance criteria) is the 5-hour brief. The trial matrix, the source adapter, the two-page
+dossiers and the benchmark were added afterwards as hardening, each in its own commit, so the
+history shows what came when.
 
 ## Run it
 
@@ -81,6 +97,8 @@ advisory lock makes a second `pilot run` stop with "Another pilot run is already
 | SQL | `sql/001_schema.sql` (tables), `sql/002_views.sql` (the two views) |
 | Fixture | `fixtures/de/*.geojson`: one delivery file per dataset, one synthetic region near Mannheim |
 | Tests | `tests/test_pipeline.py` (success, failing stage, stale, rerun, data contract, dossiers), `tests/test_adapter.py` |
+| Continuous check | `.github/workflows/tests.yml`: on every push, a fresh PostGIS runs `make install`, `make run`, `make test` and `make status` |
+| Example outputs | `examples/`: dossiers (Markdown and PDF), manifests of a successful and a failed run |
 
 ## How each acceptance criterion is met
 
