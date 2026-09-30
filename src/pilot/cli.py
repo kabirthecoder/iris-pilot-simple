@@ -1,6 +1,7 @@
 """Command line.
 
     pilot setup    create tables and views, load the fixture (safe to repeat)
+    pilot load F   load delivery file(s) F (GeoJSON) into staging, for any dataset and country
     pilot run      run all stages once; exit code 0 = succeeded, 1 = failed
     pilot status   show whether each output is fresh or STALE, plus one plain verdict; exit 1 unless OK
 """
@@ -8,9 +9,11 @@
 import argparse
 import sys
 
+from pilot.adapters import load_geojson
 from pilot.db import Context, connect, setup
 from pilot.manifest import output_states, verdict
 from pilot.runner import run_pipeline
+from pilot.stages import StageError
 
 RUN_LOCK = 7431   # any fixed number; PostgreSQL lets only one session hold it
 SHOW_LEFT_OUT = 20
@@ -59,15 +62,35 @@ def cmd_status(ctx: Context) -> int:
     return 0 if verdict(outputs).startswith("OK") else 1
 
 
+def cmd_load(ctx: Context, files: list[str]) -> int:
+    """All-or-nothing per file; the next `pilot run` checks and promotes what was loaded."""
+    if not files:
+        print("usage: pilot load FILE.geojson [FILE ...]")
+        return 1
+    ok = True
+    for f in files:
+        try:
+            r = load_geojson(ctx.db_url, f)
+            print(f"loaded {r['file']}: {r['dataset']} {r['country_code']}, "
+                  f"{r['features']} features, {r['changed']} new or changed")
+        except StageError as exc:
+            print(f"NOT loaded: {exc}")
+            ok = False
+    return 0 if ok else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="pilot", description="IRIS pilot: one-command run")
-    parser.add_argument("command", choices=["setup", "run", "status"])
+    parser.add_argument("command", choices=["setup", "load", "run", "status"])
+    parser.add_argument("files", nargs="*", help="for load: GeoJSON delivery files")
     args = parser.parse_args(argv)
     ctx = Context.from_env()
     if args.command == "setup":
         setup(ctx.db_url)
         print("setup done: tables, views and fixture are in place")
         return 0
+    if args.command == "load":
+        return cmd_load(ctx, args.files)
     return cmd_run(ctx) if args.command == "run" else cmd_status(ctx)
 
 
