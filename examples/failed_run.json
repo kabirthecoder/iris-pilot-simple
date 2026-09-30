@@ -1,0 +1,67 @@
+{
+  "run_id": "20260930T094635348670Z",
+  "started_at": "2026-09-30T09:46:35+00:00",
+  "stages": [
+    {
+      "name": "check_prerequisites",
+      "started_at": "2026-09-30T09:46:35+00:00",
+      "status": "failed",
+      "error": "no accepted data for: substation",
+      "finished_at": "2026-09-30T09:46:35+00:00",
+      "duration_ms": 41
+    },
+    {
+      "name": "promote_accepted_data",
+      "status": "skipped",
+      "reason": "an earlier stage failed"
+    },
+    {
+      "name": "refresh_bess_view",
+      "status": "skipped",
+      "reason": "an earlier stage failed"
+    },
+    {
+      "name": "refresh_peat_view",
+      "status": "skipped",
+      "reason": "an earlier stage failed"
+    },
+    {
+      "name": "export_dossiers",
+      "status": "skipped",
+      "reason": "an earlier stage failed"
+    }
+  ],
+  "status": "failed",
+  "finished_at": "2026-09-30T09:46:35+00:00",
+  "outputs": [
+    {
+      "name": "bess_dossiers",
+      "state": "STALE",
+      "reason": "last attempt failed: no accepted data for: substation",
+      "built_at": "2026-09-30T09:45:33+00:00",
+      "data_version": 1
+    },
+    {
+      "name": "bess_view",
+      "state": "STALE",
+      "reason": "last attempt failed: no accepted data for: substation",
+      "built_at": "2026-09-30T09:45:33+00:00",
+      "data_version": 1
+    },
+    {
+      "name": "peat_dossiers",
+      "state": "STALE",
+      "reason": "last attempt failed: no accepted data for: substation",
+      "built_at": "2026-09-30T09:45:33+00:00",
+      "data_version": 1
+    },
+    {
+      "name": "peat_view",
+      "state": "STALE",
+      "reason": "last attempt failed: no accepted data for: substation",
+      "built_at": "2026-09-30T09:45:33+00:00",
+      "data_version": 1
+    }
+  ],
+  "verdict": "DO NOT USE: bess_dossiers cannot be trusted (last attempt failed: no accepted data for: substation). These dossiers may be outdated. Ask the pilot operator to fix it and rerun."
+}
