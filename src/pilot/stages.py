@@ -93,8 +93,8 @@ def _value(column: str, json_type: str) -> str:
 
 
 def promote(ctx: Context) -> dict:
-    """Make core exactly match the staged rows that are accepted AND meet the data contract:
-    insert or update those rows, delete rows that were withdrawn or became invalid.
+    """Make core match what the data steward accepted: insert or update accepted rows that meet
+    the data contract, delete rows the steward rejected.
 
     Rerun-safe: rows that are already identical are not touched, and data_version only goes up
     when something really changed. Everything happens in one transaction."""
@@ -132,13 +132,14 @@ def promote(ctx: Context) -> dict:
                 WHERE ({', '.join(f't.{c}' for c in all_cols)})
                       IS DISTINCT FROM ({', '.join(f'EXCLUDED.{c}' for c in all_cols)})
             """, (dataset,)).rowcount
-            # Withdrawn by the data steward: remove from core. (A row that is accepted but now
-            # invalid keeps its last good version and is listed under LEFT OUT - a bad delivery
-            # must never delete good data, e.g. a nature reserve.)
+            # Rejected by the data steward: remove from core. Everything else keeps its last
+            # good version: a row that is accepted but now invalid (listed under LEFT OUT), and a
+            # changed re-delivery that is 'pending' until the steward has looked at it. A bad or
+            # unreviewed delivery must never delete good data, e.g. a nature reserve.
             changed += conn.execute(f"""
                 DELETE FROM {spec['table']} t WHERE NOT EXISTS (
                     SELECT 1 FROM staging.feature
-                    WHERE dataset = %s AND review_status = 'accepted'
+                    WHERE dataset = %s AND review_status IN ('accepted', 'pending')
                       AND country_code = t.country_code AND feature_id = t.{spec['key']})
             """, (dataset,)).rowcount
 
