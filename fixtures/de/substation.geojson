@@ -1,0 +1,25 @@
+{
+ "type": "FeatureCollection",
+ "name": "Grid substations (synthetic)",
+ "dataset": "substation",
+ "country_code": "DE",
+ "crs": {
+  "type": "name",
+  "properties": {
+   "name": "urn:ogc:def:crs:EPSG::4326"
+  }
+ },
+ "source_date": "2026-05-15",
+ "uncertainty_m": 5.0,
+ "units": {
+  "voltage_kv": "kV"
+ },
+ "features": [
+  {"type": "Feature", "id": "S1", "properties": {"voltage_kv": 110, "review_status": "accepted"}, "geometry": {"type": "Point", "coordinates": [8.5996443, 49.4809503]}},
+  {"type": "Feature", "id": "S2", "properties": {"voltage_kv": 380, "review_status": "accepted"}, "geometry": {"type": "Point", "coordinates": [8.6963081, 49.476747]}},
+  {"type": "Feature", "id": "S3", "properties": {"voltage_kv": 20, "review_status": "accepted"}, "geometry": {"type": "Point", "coordinates": [8.6407304, 49.5260594]}},
+  {"type": "Feature", "id": "S4", "properties": {"voltage_kv": 110, "review_status": "accepted"}, "geometry": {"type": "Point", "coordinates": [8.6680309, 49.5756123]}},
+  {"type": "Feature", "id": "S5", "properties": {"review_status": "accepted"}, "geometry": {"type": "Point", "coordinates": [8.6548014, 49.4901229]}},
+  {"type": "Feature", "id": "S6", "properties": {"voltage_kv": 220, "review_status": "accepted"}, "geometry": {"type": "Point", "coordinates": [8.4764549, 49.3815133]}}
+ ]
+}

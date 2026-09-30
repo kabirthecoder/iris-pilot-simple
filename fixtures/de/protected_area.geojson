@@ -1,0 +1,19 @@
+{
+ "type": "FeatureCollection",
+ "name": "Protected areas (synthetic)",
+ "dataset": "protected_area",
+ "country_code": "DE",
+ "crs": {
+  "type": "name",
+  "properties": {
+   "name": "urn:ogc:def:crs:EPSG::4326"
+  }
+ },
+ "source_date": "2026-01-31",
+ "uncertainty_m": 10.0,
+ "units": {},
+ "features": [
+  {"type": "Feature", "id": "PA1", "properties": {"name": "Naturschutzgebiet", "review_status": "accepted"}, "geometry": {"type": "Polygon", "coordinates": [[[8.615675, 49.4612158], [8.6225747, 49.4612386], [8.6225264, 49.4675348], [8.6156257, 49.4675121], [8.615675, 49.4612158]]]}},
+  {"type": "Feature", "id": "PA2", "properties": {"name": "FFH-Gebiet", "review_status": "accepted"}, "geometry": {"type": "Polygon", "coordinates": [[[8.570911, 49.609293], [8.5764475, 49.6093134], [8.5764319, 49.6111123], [8.5708952, 49.6110919], [8.570911, 49.609293]]]}}
+ ]
+}

@@ -35,8 +35,14 @@ def connect(db_url: str) -> psycopg.Connection:
 
 
 def setup(db_url: str) -> None:
-    """Create tables and views, then load the fixture. Safe to run again."""
+    """Create tables and views (safe to run again). Load the fixture files through the source
+    adapter, but only into an empty staging table, so a rerun never overwrites later changes."""
+    from pilot.adapters import load_geojson   # here, not at the top: adapters imports this module
+
     with connect(db_url) as conn:
         for path in sorted((ROOT / "sql").glob("*.sql")):
             conn.execute(path.read_text())
-        conn.execute((ROOT / "fixtures" / "seed.sql").read_text())
+        empty = conn.execute("SELECT NOT EXISTS (SELECT 1 FROM staging.feature) AS e").fetchone()["e"]
+    if empty:
+        for path in sorted((ROOT / "fixtures").glob("*/*.geojson")):
+            load_geojson(db_url, path)

@@ -1,0 +1,24 @@
+{
+ "type": "FeatureCollection",
+ "name": "Peat soil map (synthetic)",
+ "dataset": "peat_soil",
+ "country_code": "DE",
+ "crs": {
+  "type": "name",
+  "properties": {
+   "name": "urn:ogc:def:crs:EPSG::25832"
+  }
+ },
+ "source_date": "2025-11-01",
+ "uncertainty_m": 25.0,
+ "units": {
+  "depth_cm": "cm"
+ },
+ "features": [
+  {"type": "Feature", "id": "PS1", "properties": {"drained": true, "depth_cm": 120, "review_status": "accepted"}, "geometry": {"type": "Polygon", "coordinates": [[[465000, 5495000], [465320, 5495000], [465320, 5495300], [465000, 5495300], [465000, 5495000]]]}},
+  {"type": "Feature", "id": "PS2", "properties": {"drained": false, "depth_cm": 150, "review_status": "accepted"}, "geometry": {"type": "Polygon", "coordinates": [[[466000, 5495000], [466300, 5495000], [466300, 5495300], [466000, 5495300], [466000, 5495000]]]}},
+  {"type": "Feature", "id": "PS3", "properties": {"drained": true, "depth_cm": 20, "review_status": "accepted"}, "geometry": {"type": "Polygon", "coordinates": [[[467000, 5495000], [467300, 5495000], [467300, 5495300], [467000, 5495300], [467000, 5495000]]]}},
+  {"type": "Feature", "id": "PS4", "properties": {"drained": true, "depth_cm": 100, "review_status": "accepted"}, "geometry": {"type": "Polygon", "coordinates": [[[468000, 5495000], [468030, 5495000], [468030, 5495300], [468000, 5495300], [468000, 5495000]]]}},
+  {"type": "Feature", "id": "PS5", "properties": {"drained": true, "depth_cm": 90, "review_status": "accepted"}, "geometry": {"type": "Polygon", "coordinates": [[[469000, 5495000], [469400, 5495000], [469400, 5495240], [469000, 5495240], [469000, 5495000]]]}}
+ ]
+}

@@ -1,0 +1,33 @@
+{
+ "type": "FeatureCollection",
+ "name": "Cadastral parcels (synthetic)",
+ "dataset": "parcel",
+ "country_code": "DE",
+ "crs": {
+  "type": "name",
+  "properties": {
+   "name": "urn:ogc:def:crs:EPSG::25832"
+  }
+ },
+ "source_date": "2026-06-30",
+ "uncertainty_m": 2.5,
+ "units": {},
+ "features": [
+  {"type": "Feature", "id": "P001", "properties": {"land_use": "arable", "review_status": "accepted"}, "geometry": {"type": "Polygon", "coordinates": [[[471300, 5481400], [471600, 5481400], [471600, 5481600], [471300, 5481600], [471300, 5481400]]]}},
+  {"type": "Feature", "id": "P002", "properties": {"land_use": "arable", "review_status": "accepted"}, "geometry": {"type": "Polygon", "coordinates": [[[470200, 5481200], [470350, 5481200], [470350, 5481300], [470200, 5481300], [470200, 5481200]]]}},
+  {"type": "Feature", "id": "P003", "properties": {"land_use": "grassland", "review_status": "accepted"}, "geometry": {"type": "Polygon", "coordinates": [[[463000, 5488000], [463400, 5488000], [463400, 5488300], [463000, 5488300], [463000, 5488000]]]}},
+  {"type": "Feature", "id": "P004", "properties": {"land_use": "arable", "review_status": "accepted"}, "geometry": {"type": "Polygon", "coordinates": [[[472000, 5479000], [472300, 5479000], [472300, 5479300], [472000, 5479300], [472000, 5479000]]]}},
+  {"type": "Feature", "id": "P005", "properties": {"land_use": "brownfield", "review_status": "accepted"}, "geometry": {"type": "Polygon", "coordinates": [[[479000, 5479000], [479250, 5479000], [479250, 5479160], [479000, 5479160], [479000, 5479000]]]}},
+  {"type": "Feature", "id": "P006", "properties": {"land_use": "forest", "review_status": "accepted"}, "geometry": {"type": "Polygon", "coordinates": [[[470500, 5482000], [470800, 5482000], [470800, 5482300], [470500, 5482300], [470500, 5482000]]]}},
+  {"type": "Feature", "id": "P007", "properties": {"land_use": "arable", "review_status": "accepted"}, "geometry": {"type": "Polygon", "coordinates": [[[473500, 5487000], [473800, 5487000], [473800, 5487200], [473500, 5487200], [473500, 5487000]]]}},
+  {"type": "Feature", "id": "P008", "properties": {"land_use": "grassland", "review_status": "accepted"}, "geometry": {"type": "Polygon", "coordinates": [[[480995, 5480400], [481295, 5480400], [481295, 5480600], [480995, 5480600], [480995, 5480400]]]}},
+  {"type": "Feature", "id": "P009", "properties": {"land_use": "grassland", "review_status": "accepted"}, "geometry": {"type": "Polygon", "coordinates": [[[465000, 5495000], [465400, 5495000], [465400, 5495300], [465000, 5495300], [465000, 5495000]]]}},
+  {"type": "Feature", "id": "P010", "properties": {"land_use": "grassland", "review_status": "accepted"}, "geometry": {"type": "Polygon", "coordinates": [[[466000, 5495000], [466300, 5495000], [466300, 5495300], [466000, 5495300], [466000, 5495000]]]}},
+  {"type": "Feature", "id": "P011", "properties": {"land_use": "arable", "review_status": "accepted"}, "geometry": {"type": "Polygon", "coordinates": [[[467000, 5495000], [467300, 5495000], [467300, 5495300], [467000, 5495300], [467000, 5495000]]]}},
+  {"type": "Feature", "id": "P012", "properties": {"land_use": "arable", "review_status": "accepted"}, "geometry": {"type": "Polygon", "coordinates": [[[468000, 5495000], [468300, 5495000], [468300, 5495300], [468000, 5495300], [468000, 5495000]]]}},
+  {"type": "Feature", "id": "P013", "properties": {"land_use": "grassland", "review_status": "accepted"}, "geometry": {"type": "Polygon", "coordinates": [[[469000, 5495000], [469400, 5495000], [469400, 5495400], [469000, 5495400], [469000, 5495000]]]}},
+  {"type": "Feature", "id": "P900", "properties": {"land_use": "arable", "review_status": "accepted"}, "geometry": {"type": "Polygon", "coordinates": [[[470000, 5483000], [470300, 5483300], [470300, 5483000], [470000, 5483300], [470000, 5483000]]]}},
+  {"type": "Feature", "id": "P901", "properties": {"land_use": "arable", "review_status": "accepted", "country_code": null}, "geometry": {"type": "Polygon", "coordinates": [[[470000, 5484000], [470300, 5484000], [470300, 5484300], [470000, 5484300], [470000, 5484000]]]}},
+  {"type": "Feature", "id": "P902", "properties": {"land_use": "arable", "review_status": "pending"}, "geometry": {"type": "Polygon", "coordinates": [[[471700, 5481500], [472000, 5481500], [472000, 5481700], [471700, 5481700], [471700, 5481500]]]}}
+ ]
+}
