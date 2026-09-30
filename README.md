@@ -16,7 +16,7 @@ folder (or connect any SQL client to `localhost:54320`, user/password/database `
 make up        # start PostgreSQL 16 + PostGIS 3.4
 make install   # create .venv
 make run       # the one command
-make test      # 20 tests
+make test      # 27 tests
 make status    # is each output fresh or STALE?
 ```
 
@@ -49,7 +49,8 @@ RUN SUCCEEDED  manifest: out/runs/20260929T155517609019Z.json
 Files produced:
 
 - `out/dossiers/READ_ME_FIRST.txt`: **one plain sentence for non-technical readers**. It is either "OK: all reports are up to date … Safe to use." or "DO NOT USE: … Ask the pilot operator to fix it and rerun." While a run is in progress it says "DO NOT USE YET".
-- `out/dossiers/bess/*.md` and `out/dossiers/peat/*.md`: sample dossiers
+- `out/dossiers/bess/*.md` and `out/dossiers/peat/*.md`: **two-page prospecting dossiers**
+  (see "Dossiers" below)
 - `out/runs/<run_id>.json`: run manifest (one per run)
 - `out/last_run.json`: the latest manifest
 
@@ -58,10 +59,10 @@ Files produced:
 | # | Stage | What it does |
 |---|---|---|
 | 1 | `check_prerequisites` | Database reachable, PostgreSQL 16+, PostGIS 3.4+, tables exist, accepted data exists for all 4 datasets |
-| 2 | `promote_accepted_data` | Makes `core` match what the data steward **accepted**: valid rows are inserted or updated, withdrawn rows are deleted. Invalid rows are left out and listed. If a dataset has **no** valid rows, the stage fails instead of screening with an empty input |
+| 2 | `promote_accepted_data` | Makes `core` match what the data steward **accepted**: valid rows are inserted or updated, rows the steward **rejected** are deleted. Invalid rows are left out and listed. A changed delivery that is still `pending` review keeps its last promoted version. If a dataset has **no** valid rows, the stage fails instead of screening with an empty input |
 | 3 | `refresh_bess_view` | Refreshes `mart.bess_candidates` |
 | 4 | `refresh_peat_view` | Refreshes `mart.peat_candidates` |
-| 5 | `export_dossiers` | Writes the top 3 candidates of each vertical as Markdown dossiers |
+| 5 | `export_dossiers` | Writes the top 3 candidates of each vertical as two-page Markdown dossiers |
 
 If a stage fails, it is marked `failed` with its error, every later stage is marked `skipped`,
 and the run is `failed` (exit code 1). Only one run can be active at a time, because a PostgreSQL
@@ -71,13 +72,15 @@ advisory lock makes a second `pilot run` stop with "Another pilot run is already
 
 | Deliverable | File |
 |---|---|
-| CLI | `src/pilot/cli.py`: `pilot setup`, `pilot run`, `pilot status` |
+| CLI | `src/pilot/cli.py`: `pilot setup`, `pilot load`, `pilot run`, `pilot status` |
 | Stage runner | `src/pilot/runner.py` |
 | Run manifest | `src/pilot/manifest.py`: JSON with counts, timestamps, failure details and output states |
 | Stages | `src/pilot/stages.py` |
+| Source adapter | `src/pilot/adapters.py`: one GeoJSON loader for every dataset and country |
+| Dossiers | `src/pilot/dossier.py`: two-page prospecting output |
 | SQL | `sql/001_schema.sql` (tables), `sql/002_views.sql` (the two views) |
-| Fixture | `fixtures/seed.sql`: one synthetic region near Mannheim |
-| Tests | `tests/test_pipeline.py`: success, failing stage, stale, rerun, data contract |
+| Fixture | `fixtures/de/*.geojson`: one delivery file per dataset, one synthetic region near Mannheim |
+| Tests | `tests/test_pipeline.py` (success, failing stage, stale, rerun, data contract, dossiers), `tests/test_adapter.py` |
 
 ## How each acceptance criterion is met
 
@@ -108,9 +111,22 @@ This shows in every manifest, in `pilot status` (exit 1 unless OK) and, in plain
 - Views are recomputed from core, which gives the same result every time.
 - Dossiers are overwritten atomically (temp file + rename), and old ones are removed.
 - A second run started at the same time is refused, by an advisory lock.
-- `pilot setup` uses `IF NOT EXISTS` and `ON CONFLICT DO NOTHING`.
+- `pilot setup` creates tables with `IF NOT EXISTS`, recreates the views (derived data), and loads
+  the fixture only into an empty staging table. Loading the same delivery file twice changes nothing.
 
 *Tests:* `test_rerun_changes_nothing`, `test_second_run_is_refused_while_one_is_active`
+
+## Project context: how each priority is covered
+
+| Priority from the brief | Where |
+|---|---|
+| One-region vertical slice | One synthetic region near Mannheim, carried from delivery file to staging, core, views, dossiers and manifest |
+| Country-aware reusable adapters | `pilot load`: one adapter for every dataset and country, country-scoped keys and joins (see "Source adapter") |
+| PostgreSQL/PostGIS | PostgreSQL 16 + PostGIS 3.4, all screening in SQL with GiST indexes |
+| Geometry correctness | Invalid, empty, 3D, wrong-type or unknown-CRS geometry is rejected with a reason; one equal-area CRS (EPSG:3035); overlapping reserves and peat polygons merged before measuring |
+| Controlled promotion | Only steward-accepted rows that meet the data contract reach core; changed deliveries wait as `pending`; rejected rows leave core; a bad delivery never deletes good data |
+| Explainable spatial screening | One yes/no column per rule, and the dossier names the features each result is based on |
+| Two-page prospecting outputs | Two-page dossiers: summary and rules, then evidence, sources, method and the reference uncertainty wording |
 
 ## Engineering constraints
 
@@ -132,6 +148,51 @@ This shows in every manifest, in `pilot status` (exit 1 unless OK) and, in plain
 - **Dossiers** end with the project's reference uncertainty wording ("Preliminary prospecting material…").
 - **Setup:** SQL files and a CLI, not notebooks. There are no credentials; the fixture is local.
 
+## Source adapter: country-aware and reusable
+
+Every source reaches staging through one adapter, `pilot load FILE.geojson`. It is the same code
+for every dataset and every country. The fixture is loaded the same way. Each delivery file
+states its own data contract:
+
+```json
+{"type": "FeatureCollection", "dataset": "substation", "country_code": "DE",
+ "crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:EPSG::4326"}},
+ "source_date": "2026-05-15", "uncertainty_m": 5.0, "units": {"voltage_kv": "kV"},
+ "features": [{"type": "Feature", "id": "S1", "properties": {"voltage_kv": 110}, "geometry": {...}}]}
+```
+
+- **Country-aware:** every row gets the file's `country_code`, and keys and joins are
+  country-scoped. An NL delivery can reuse the ids `P001…` without touching DE data, and an NL
+  parcel is never screened against DE substations (`test_same_ids_in_another_country_stay_separate`).
+- **Never invents:** the adapter copies what the file says. A file without a CRS is loaded with
+  SRID 0 and rejected on promotion as "unknown CRS". It does not assume WGS84.
+- **Controlled promotion:** a feature's `review_status` comes from the file if given. Otherwise a
+  new or changed feature is `pending`, so the data steward must look again, and an unchanged one
+  keeps its decision. Until then core keeps the last promoted version.
+- **All or nothing:** one file is one transaction. A broken feature means nothing from that file
+  is loaded, and the error names the feature.
+- **Rerun-safe:** loading the same file twice changes 0 rows.
+
+Adding a new source (WFS, cadastre API, shapefile) means writing it out in this format, or adding
+a second small loader that fills the same staging columns. Promotion, screening and dossiers stay
+unchanged.
+
+## Dossiers: two-page prospecting output
+
+Each dossier is Markdown with a page break, and prints or exports to exactly two A4 pages (checked
+by rendering all five fixture dossiers to PDF).
+
+- **Page 1, summary:** the result, the location (a point inside the parcel, WGS84), area, land use
+  and the key screening values, then the rule table with pass/fail per rule. The peatland dossier
+  also shows the drained peat area and the **indicative eco-points** (drained peat area × 8, the
+  commercial baseline from the project wording; not certified). A BESS result closer to the 3 km
+  limit than the combined positional uncertainty is flagged as **borderline**, e.g. P008 at
+  2,997 m with ±7.5 m.
+- **Page 2, evidence and sources:** every feature the result is based on (parcel, nearest
+  substation, overlapping reserves or peat polygons) with its own source date and positional
+  uncertainty, the datasets used with their dates, the method, and the project's reference
+  uncertainty wording.
+
 ## Screening rules
 
 - **BESS:** area ≥ 20,000 m², land use arable/grassland/brownfield, ≤ 3,000 m to a substation of
@@ -143,7 +204,8 @@ Each view has one yes/no column per rule, so every dossier shows why a parcel pa
 
 ## Fixture
 
-13 parcels, each built to show one rule. The expected results are:
+`fixtures/de/`: four delivery files (parcels and peat in EPSG:25832, substations and reserves in
+EPSG:4326). 13 parcels, each built to show one rule. The expected results are:
 - **BESS:** P001, P005, P008 pass.
 - **Peat:** P009, P013 pass.
 - **Rejected on promotion:** P900 (self-intersecting shape), P901 (no country code) and S5 (no
@@ -156,14 +218,15 @@ Each view has one yes/no column per rule, so every dossier shows why a parcel pa
 |---|---|
 | Stages run one after another and stop at the first failure | Let independent stages (BESS and peat) continue in parallel |
 | `pilot setup` runs the SQL files with `IF NOT EXISTS` | Versioned migrations (e.g. Alembic or numbered, checksummed files) |
-| Fixture loaded from `seed.sql` | Source adapters (WFS, cadastre API, files) filling `staging` |
+| One adapter, for GeoJSON files | More loaders (WFS, cadastre API, shapefile) that fill the same staging columns |
+| Deliveries are incremental; a feature leaves core when the steward rejects it | Full-snapshot deliveries that also retire features missing from the new file |
 | Thresholds written in the view SQL | A rules table per country |
 | Status via exit code, manifest, `pilot status` and `READ_ME_FIRST.txt` | Scheduler plus alerts, e.g. cron: `0 6 * * * cd /repo && make run \|\| mail -s "IRIS run FAILED" pm@example.com` |
-| Dossiers show the parcel's source date and uncertainty | Also show those of the peat, substation and reserve data each verdict depends on |
+| Dossiers are Markdown with a page break | PDF rendering with a map extract of the parcel |
 | Plain `REFRESH MATERIALIZED VIEW` (readers wait briefly; `lock_timeout` = 60 s stops endless waits) | `REFRESH … CONCURRENTLY` once people read the views live |
-| `make run` also loads the fixture | Separate `make seed` for production data |
+| `make run` also runs `pilot setup` (fixture only into an empty staging table) | Separate setup and data loading in production |
 | Every run keeps its manifest | Retention for `out/runs/` |
-| No "borderline" flag (P008 passes at 2,997 m of 3,000 m, ±2.5 m) | Flag results within the positional uncertainty |
+| Borderline flag only for the grid distance | Also for area and protected share, using the geometry's uncertainty |
 
 ## Trials
 
@@ -178,7 +241,7 @@ PostGIS 3.4, each on a fresh database:
 | Data changes | new attribute; withdrawn then re-accepted; pending then accepted; geometry moved 1 m | all pass |
 | Country scope | same parcel id in DE and NL: separate rows, NL never joins DE substations | pass |
 | Operations | database down; not set up; wrong password (not printed); 4 runs started at once; `kill -9` mid-refresh; refresh blocked past `lock_timeout` (fails after 60 s, STALE); `out/` deleted; stray old dossier; `status` during a run | all pass |
-| Scale | 20,000 parcels, 200 substations, 400 peat polygons, 100 reserves | 2.8 s per run, rerun changes 0 rows |
+| Scale | up to 160,000 parcels | linear, rerun changes 0 rows (see below) |
 
 Defects the trials found (each now has a test in `test_bad_delivery_is_left_out_and_run_still_succeeds`):
 
@@ -211,14 +274,18 @@ Every spatial join uses its GiST index (checked with `EXPLAIN`), so no parcel is
 every substation, reserve or peat polygon. `REFRESH MATERIALIZED VIEW` briefly needs space for the
 old and the new copy of a view.
 
-Measured (whole `pilot run`, constant density, growing region):
+Measured (whole `pilot run`, constant density, growing region, on a shared cloud machine):
 
 | Parcels | Run | Rerun (0 rows changed) | Python memory | core + views on disk |
 |---|---|---|---|---|
-| 5,000 | 0.8 s | 0.8 s | 40 MB | 3 MB |
-| 20,000 | 2.8 s | 2.4 s | 40 MB | 11 MB |
-| 80,000 | 8.6 s | 7.7 s | 43 MB | 44 MB |
-| 160,000 | 15.9 s | 15.6 s | 47 MB | 86 MB |
+| 5,000 | 1.4 s | 1.4 s | 39 MB | 4 MB |
+| 20,000 | 4.3 s | 3.9 s | 40 MB | 13 MB |
+| 80,000 | 15.4 s | 15.0 s | 42 MB | 49 MB |
+| 160,000 | 32.2 s | 27.2 s | 46 MB | 98 MB |
+
+The evidence columns for the two-page dossiers (location, feature ids, source dates) add about
+12 % to the view refresh (measured against the previous version on the same machine). The point
+inside each parcel is computed once and reused for lat and lon.
 
 2× the data takes about 2× the time, i.e. linear, and Python memory stays flat because the work
 happens in PostgreSQL. A rerun costs about as much as a first run because both views are always
