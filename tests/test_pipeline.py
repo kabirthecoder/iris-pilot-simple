@@ -5,7 +5,7 @@ import json
 import pytest
 
 from pilot import cli
-from pilot.db import connect
+from pilot.db import connect, setup
 from pilot.manifest import output_states
 from pilot.runner import STAGES, Stage, run_pipeline
 
@@ -167,6 +167,30 @@ def test_long_left_out_list_is_shortened_on_screen_but_complete_in_manifest(ctx,
     cli.main(["run"])
     assert "... and 13 more, all listed in the manifest" in capsys.readouterr().out   # 30 + 3 fixture rows
     assert len(json.loads((ctx.out_dir / "last_run.json").read_text())["stages"][1]["counts"]["rejected_rows"]) == 33
+
+
+def test_dossiers_are_two_pages_with_the_evidence_behind_the_result(ctx):
+    run_pipeline(ctx)
+    bess = (ctx.out_dir / "dossiers" / "bess" / "DE-P008.md").read_text()
+    peat = (ctx.out_dir / "dossiers" / "peat" / "DE-P009.md").read_text()
+    for text in (bess, peat):
+        assert "Page 1 of 2" in text and "page-break-after" in text and "Page 2 of 2" in text
+        assert "Preliminary prospecting material." in text
+    # page 2 names the features used, with their own source date and uncertainty
+    assert "| Nearest substation of 110 kV or more | S2 (380 kV) | 2026-05-15 | ±5 m |" in bess
+    assert "| Peat soil polygons overlapping the parcel | PS1 (120 cm, drained) | 2025-11-01 | ±25 m |" in peat
+    # P008 passes at 2,997 m of 3,000 m, within ±7.5 m combined uncertainty: flagged, P001 (500 m) is not
+    assert "borderline" in bess
+    assert "borderline" not in (ctx.out_dir / "dossiers" / "bess" / "DE-P001.md").read_text()
+    assert "768,592 (drained peat area × 8" in peat         # 96,074 m² drained peat × 8
+
+
+def test_setup_rebuilds_views_and_marks_outputs_not_fresh(ctx):
+    run_pipeline(ctx)
+    setup(ctx.db_url)                              # e.g. after a new version of the view SQL
+    assert {o["state"] for o in output_states(ctx)} == {"STALE"}
+    assert run_pipeline(ctx)["status"] == "succeeded"
+    assert {o["state"] for o in output_states(ctx)} == {"fresh"}
 
 
 def test_wrong_unit_is_rejected(ctx):

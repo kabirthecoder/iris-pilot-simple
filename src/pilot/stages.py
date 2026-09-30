@@ -3,6 +3,7 @@ A stage signals failure by raising; the runner records it and stops."""
 
 from pathlib import Path
 
+from pilot import dossier
 from pilot.db import Context, connect
 
 MIN_POSTGRES = 160000      # PostgreSQL 16
@@ -184,59 +185,12 @@ def refresh_peat(ctx: Context) -> dict:
 SAMPLE_SIZE = 3
 
 
-# The project's reference uncertainty wording (IRIS-CAND-22), printed on every dossier.
-DISCLAIMER = (
-    "Preliminary prospecting material. Figures, eco-point estimates and site suitability are indicative and "
-    "based on available source data and commercial screening assumptions. The 8 eco-points/m2 factor is the "
-    "current commercial baseline, not certified compensation. Ownership, planning, grid capacity, environmental "
-    "eligibility and transferability remain subject to project-specific verification. No permit, reservation or "
-    "construction readiness is represented."
-)
-
-
-def _yes(ok: bool) -> str:
-    return "yes" if ok else "NO"
-
-
-def _bess_dossier(r: dict, version: int) -> str:
-    return f"""# BESS dossier: {r['country_code']}-{r['parcel_id']}
-
-Land use: {r['land_use']} | Area: {r['area_m2']:,} m²
-
-| Rule | Value | Pass |
-|---|---|---|
-| Area at least 20,000 m² | {r['area_m2']:,} m² | {_yes(r['ok_area'])} |
-| Land use arable, grassland or brownfield | {r['land_use']} | {_yes(r['ok_land_use'])} |
-| Within 3,000 m of a substation of 110 kV or more | {r['substation_distance_m']} m ({r['substation_id']}, {r['voltage_kv']} kV) | {_yes(r['ok_grid'])} |
-| At most 5 % inside protected areas | {float(r['protected_share']) * 100:.1f} % | {_yes(r['ok_protected'])} |
-
-Source date: {r['source_date']} | Positional uncertainty: ±{r['uncertainty_m']} m | CRS: EPSG:3035 | Data version: {version} | Check READ_ME_FIRST.txt in the dossiers folder before use
-
-> {DISCLAIMER}
-"""
-
-
-def _peat_dossier(r: dict, version: int) -> str:
-    return f"""# Peatland dossier: {r['country_code']}-{r['parcel_id']}
-
-Land use: {r['land_use']} | Area: {r['area_m2']:,} m²
-
-| Rule | Value | Pass |
-|---|---|---|
-| At least 30 % of the parcel on peat | {float(r['peat_share']) * 100:.0f} % | {_yes(r['ok_peat'])} |
-| At least 30 % on drained peat | {float(r['drained_share']) * 100:.0f} % | {_yes(r['ok_drained'])} |
-| Peat at least 30 cm deep (area-weighted) | {r['mean_depth_cm']} cm | {_yes(r['ok_depth'])} |
-
-Source date: {r['source_date']} | Positional uncertainty: ±{r['uncertainty_m']} m | CRS: EPSG:3035 | Data version: {version} | Check READ_ME_FIRST.txt in the dossiers folder before use
-
-> {DISCLAIMER}
-"""
-
-
 VERTICALS = [
-    # (folder, view, order: best first, renderer, artifact)
-    ("bess", "mart.bess_candidates", "substation_distance_m, parcel_id", _bess_dossier, "bess_dossiers"),
-    ("peat", "mart.peat_candidates", "peat_share DESC, parcel_id", _peat_dossier, "peat_dossiers"),
+    # (folder, view, order: best first, renderer, datasets it uses, artifact)
+    ("bess", "mart.bess_candidates", "substation_distance_m, parcel_id", dossier.bess,
+     ("parcel", "substation", "protected_area"), "bess_dossiers"),
+    ("peat", "mart.peat_candidates", "peat_share DESC, parcel_id", dossier.peat,
+     ("parcel", "peat_soil"), "peat_dossiers"),
 ]
 
 
@@ -251,14 +205,21 @@ def export_dossiers(ctx: Context) -> dict:
     counts = {}
     with connect(ctx.db_url) as conn:
         version = conn.execute("SELECT value FROM ops.state WHERE key = 'data_version'").fetchone()["value"]
-        for folder, view, order, render, artifact in VERTICALS:
+        # Provenance of every dataset in core, per country: shown on page 2 of each dossier.
+        provenance = conn.execute(" UNION ALL ".join(
+            f"SELECT '{ds}' AS dataset, country_code, count(*) AS n, min(source_date) AS oldest,"
+            f" max(source_date) AS newest, max(uncertainty_m) AS max_u FROM {spec['table']} GROUP BY country_code"
+            for ds, spec in DATASETS.items())).fetchall()
+        for folder, view, order, render, used, artifact in VERTICALS:
             rows = conn.execute(
                 f"SELECT * FROM {view} WHERE is_candidate ORDER BY {order} LIMIT {SAMPLE_SIZE}").fetchall()
             target = ctx.out_dir / "dossiers" / folder
             target.mkdir(parents=True, exist_ok=True)
             names = {f"{r['country_code']}-{r['parcel_id']}.md" for r in rows}
             for r in rows:
-                write_atomic(target / f"{r['country_code']}-{r['parcel_id']}.md", render(r, version))
+                datasets = [d for ds in used for d in provenance
+                            if d["dataset"] == ds and d["country_code"] == r["country_code"]]
+                write_atomic(target / f"{r['country_code']}-{r['parcel_id']}.md", render(r, version, datasets))
             for old in target.glob("*.md"):          # rerun-safe: remove dossiers no longer selected
                 if old.name not in names:
                     old.unlink()
